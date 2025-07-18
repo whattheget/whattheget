@@ -8490,4 +8490,484 @@ run(function()
 		List = WinEffectName
 	})
 end)
+
+local AutoPlayAllow = nil
+local AutoWin = {Enabled = false}
+run(function()
+	local antihit
+	local antihitrange 
+	local antihitairtime 
+	local antihitsettings 
+	local antihitgroundtime 
+	local antihitautoair
+
+	local oldroot
+	local hip
+	local clone
+
+	local function createClone()
+		if entitylib.isAlive and entitylib.character.Humanoid.Health > 0 and (not oldroot or not oldroot.Parent) then
+			hip = entitylib.character.Humanoid.HipHeight
+			oldroot = entitylib.character.HumanoidRootPart
+			if not lplr.Character.Parent then return false end
+			lplr.Character.Parent = game
+			clone = oldroot:Clone()
+			clone.Parent = lplr.Character
+			oldroot.Parent = gameCamera
+			bedwars.QueryUtil:setQueryIgnored(oldroot, true)
+			lplr.Character.PrimaryPart = clone
+			lplr.Character.Parent = workspace
+			for _, v in lplr.Character:GetDescendants() do
+				if v:IsA('Weld') or v:IsA('Motor6D') then
+					if v.Part0 == oldroot then v.Part0 = clone end
+					if v.Part1 == oldroot then v.Part1 = clone end
+				end
+			end
+			return true
+		end
+		return false
+	end
 	
+	local function destroyClone()
+		if not oldroot or not oldroot.Parent or not entitylib.isAlive then return false end
+		lplr.Character.Parent = game
+		oldroot.Parent = lplr.Character
+		lplr.Character.PrimaryPart = oldroot
+		lplr.Character.Parent = workspace
+		oldroot.CanCollide = true
+		for _, v in lplr.Character:GetDescendants() do
+			if v:IsA('Weld') or v:IsA('Motor6D') then
+				if v.Part0 == clone then v.Part0 = oldroot end
+				if v.Part1 == clone then v.Part1 = oldroot end
+			end
+		end
+		local oldcf = clone.CFrame
+		if clone then
+			clone:Destroy()
+			clone = nil
+		end
+		oldroot.Transparency = 1
+		oldroot = nil
+		entitylib.character.RootPart.CFrame = oldcf + Vector3.new(0, 12, 0)
+		task.spawn(function()
+			for i = 1, 12 do
+				entitylib.character.RootPart.Velocity = Vector3.zero
+				task.wait()
+			end
+		end)
+		entitylib.character.Humanoid.HipHeight = hip or 2
+	end
+
+	local rayCheck = RaycastParams.new()
+
+	local getY = function()
+		if oldroot and oldroot.Parent then
+			local lasty = -60
+			if not workspace:Raycast(oldroot.Position - Vector3.new(0, lasty, 0), Vector3.new(0, 5, 0), rayCheck) then
+				return lasty
+			end
+			for i = 1, 12 do
+				lasty -= 10
+				if not workspace:Raycast(oldroot.Position - Vector3.new(0, lasty, 0), Vector3.new(0, 5, 0), rayCheck) and not workspace:Raycast(oldroot.Position - Vector3.new(0, lasty, 0), Vector3.new(0, -5, 0), rayCheck) then
+					return lasty
+				end
+			end
+		end
+		return -100
+	end
+
+	local tpbackup = false
+
+	local lastantihitting = nil
+
+	local projectileHitting = false
+
+	antihit = vape.Categories.Blatant:CreateModule({
+		Name = 'Anti Hit',
+		Function = function(call)
+			if call then
+				antihit:Clean(runService.PreSimulation:Connect(function()
+					if entitylib.isAlive and tick() > FlyLandTick then
+						local cf = clone and clone.Parent and {clone.CFrame:GetComponents()} or {entitylib.character.HumanoidRootPart.CFrame:GetComponents()}
+						if store.KillauraTarget and not antihitting then
+							cf[2] = store.KillauraTarget.Character.PrimaryPart.CFrame.Y
+						end
+						if oldroot and oldroot.Parent then
+							oldroot.CFrame = antihitting and (tick() - entitylib.character.AirTime) < 2 and CFrame.new(clone.CFrame.X, oldroot.CFrame.Y, clone.CFrame.Z) or CFrame.new(unpack(cf)) + Vector3.new(0, 6, 0)
+							if not antihitting and lastantihitting then
+								lastantihitting = antihitting
+								for i = 1, 4 do
+									oldroot.Velocity = Vector3.zero
+									task.wait()
+								end
+							else
+								lastantihitting = antihitting
+							end
+						end
+					end
+				end))
+				repeat
+				  	if store.matchState == 0 or not entitylib.isAlive or tick() < FlyLandTick then task.wait() continue end
+					if AutoWin.Enabled and not AutoPlayAllow then return end
+					rayCheck.FilterDescendantsInstances = {lplr.Character, AntiFallPart}
+					local plr = entitylib.AllPosition({
+						Range = antihitrange.Value,
+						Part = 'RootPart',
+						Players = antihitsettings.Players.Enabled,
+						NPCs = antihitsettings.NPCs.Enabled,
+						Limit = 1
+					})[1]
+					if entitylib.character.AirTime and plr and (tick() - entitylib.character.AirTime) < 2 or projectileHitting then
+						warn('should work?')
+						createClone()
+						if tpbackup then
+							tpbackup = false
+						else
+							tpbackup = true
+						end
+						antihitting = not tpbackup
+						projectileHitting = false
+						if not tpbackup then
+							oldroot.CFrame += Vector3.new(0, getY(), 0)
+						end
+					else
+						antihitting = false
+						destroyClone()
+					end
+					local delayv = antihitautoair.Enabled and (tpbackup and store.attackSpeed and 0.14) or (tpbackup and antihitairtime.Value or antihitgroundtime.Value) 
+					task.wait(delayv)
+				until not antihit.Enabled
+			else
+				destroyClone()
+				tpbackup = false
+			end
+		end
+	})
+	antihitsettings = antihit:CreateTargets({
+		Players = true, 
+		NPCs = false
+	})
+	antihitautoair = antihit:CreateToggle({
+		Name = 'Auto Predict',
+		Default = true,
+		Function = function(call)
+			if antihitairtime then
+				antihitairtime.Object.Visible = not call
+				antihitgroundtime.Object.Visible = not call
+			end
+		end
+	})
+	antihitrange = antihit:CreateSlider({
+		Name = 'Range',
+		Min = 1,
+		Max = 40,
+		Default = 25
+	})
+	antihitgroundtime = antihit:CreateSlider({
+		Name = 'Ground Time',
+		Decimal = 15,
+		Min = 0,
+		Max = 2,
+		Default = 0.14
+	})
+	antihitairtime = antihit:CreateSlider({
+		Name = 'Air Time',
+		Decimal = 15,
+		Min = 0,
+		Max = 2,
+		Default = 0.2
+	})
+	antihitgroundtime.Object.Visible = false
+	antihitairtime.Object.Visible = false
+end)
+
+run(function()
+    local damageboost = nil
+    local damageboostduration = nil
+    local damageboostmultiplier = nil
+    damageboost = vape.Categories.Blatant:CreateModule({
+        Name = 'Damage Boost',
+        Tooltip = 'Makes you go faster whenever you take knockback.',
+        Function = function(callback)
+            if callback then
+                damageboost:Clean(vapeEvents.EntityDamageEvent.Event:Connect(function(damageTable)
+                    local player = damageTable.entityInstance and playersService:GetPlayerFromCharacter(damageTable.entityInstance)
+                    if player and player == lplr and (damageTable.knockbackMultiplier and damageTable.knockbackMultiplier.horizontal and damageTable.knockbackMultiplier.horizontal > 0 or playersService:GetPlayerFromCharacter(damageTable.fromEntity) ~= nil) and not vape.Modules['Long Jump'].Enabled then
+                        damagedata.Multi = damageboostmultiplier.Value --+ (damageTable.knockbackMultiplier.horizontal / 2)
+                        damagedata.lastHit = tick() + damageboostduration.Value
+                    end
+                end))
+            end
+        end
+    })
+    damageboostduration = damageboost:CreateSlider({
+        Name = 'Duration',
+        Min = 0,
+        Max = 2,
+        Decimal = 20,
+        Default = 0.4,
+    })
+    damageboostmultiplier = damageboost:CreateSlider({
+        Name = 'Multiplier',
+        Min = 0,
+        Max = 2,
+        Decimal = 20,
+        Default = 1.4,
+    })
+end)
+
+run(function()
+	local FlySpeed
+	local VerticalSpeed
+
+	local rayCheck = RaycastParams.new()
+	local reduceAirTime = false
+
+	local oldroot
+	local clone
+
+	local up = 0
+	local down = 0
+	local hip = 2
+
+	local function createClone()
+		if entitylib.isAlive and entitylib.character.Humanoid.Health > 0 and (not oldroot or not oldroot.Parent) then
+			hip = entitylib.character.Humanoid.HipHeight
+			oldroot = entitylib.character.HumanoidRootPart
+			if not lplr.Character.Parent then return false end
+			lplr.Character.Parent = game
+			clone = oldroot:Clone()
+			clone.Parent = lplr.Character
+			oldroot.CanCollide = true
+			oldroot.Parent = gameCamera
+			store.rootpart = clone
+			Instance.new('Highlight', oldroot)
+			bedwars.QueryUtil:setQueryIgnored(oldroot, true)
+			lplr.Character.PrimaryPart = clone
+			lplr.Character.Parent = workspace
+			for _, v in lplr.Character:GetDescendants() do
+				if v:IsA('Weld') or v:IsA('Motor6D') then
+					if v.Part0 == oldroot then v.Part0 = clone end
+					if v.Part1 == oldroot then v.Part1 = clone end
+				end
+			end
+			return true
+		end
+		return false
+	end
+
+	local function destroyClone()
+		if not oldroot or not oldroot.Parent or not entitylib.isAlive then return false end
+		lplr.Character.Parent = game
+		oldroot.Parent = lplr.Character
+		lplr.Character.PrimaryPart = oldroot
+		lplr.Character.Parent = workspace
+		for _, v in lplr.Character:GetDescendants() do
+			if v:IsA('Weld') or v:IsA('Motor6D') then
+				if v.Part0 == clone then v.Part0 = oldroot end
+				if v.Part1 == clone then v.Part1 = oldroot end
+			end
+		end
+		if clone then
+			clone:Destroy()
+			clone = nil
+		end
+		entitylib.character.Humanoid.HipHeight = hip or 2
+		oldroot.Transparency = 1
+		oldroot = nil
+		store.rootpart = nil
+	end
+
+	InfiniteFly = vape.Categories.Blatant:CreateModule({
+		Name = 'Infinite Fly',
+		Tooltip = 'Makes you go zoom.',
+		Function = function(call)
+			if call then
+				if not entitylib.isAlive or FlyLandTick > tick() or not isnetworkowner(entitylib.character.RootPart) then
+					return InfiniteFly:Toggle()
+				end
+				local a, b = pcall(createClone)
+				if not a then
+					return InfiniteFly:Toggle()
+				end
+				rayCheck.FilterDescendantsInstances = {lplr.Character, AntiFallPart, oldroot, clone}
+				local currenty = entitylib.character.RootPart.Position.Y
+				InfiniteFly:Clean(inputService.InputBegan:Connect(function(input)
+					if not inputService:GetFocusedTextBox() then
+						if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+							up = 1
+						elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonL2 then
+							down = -1
+						end
+					end
+				end))
+				InfiniteFly:Clean(inputService.InputEnded:Connect(function(input)
+					if input.KeyCode == Enum.KeyCode.Space or input.KeyCode == Enum.KeyCode.ButtonA then
+						up = 0
+					elseif input.KeyCode == Enum.KeyCode.LeftShift or input.KeyCode == Enum.KeyCode.ButtonL2 then
+						down = 0
+					end
+				end))
+				InfiniteFly:Clean(runService.PreSimulation:Connect(function(delta)
+					if not entitylib.isAlive or not clone or not clone.Parent or not isnetworkowner(oldroot) then
+						return InfiniteFly:Toggle()
+					end
+					FlyLandTick = tick() + 1
+					local mass = 1.5 + ((up + down) * VerticalSpeed.Value)
+					local moveDir = entitylib.character.Humanoid.MoveDirection
+					local velo = getSpeed()
+					local destination = (moveDir * math.max(FlySpeed.Value - velo, 0) * delta)
+					local airtime = reduceAirTime and 0 or (tick() - entitylib.character.AirTime)
+					clone.CFrame += destination
+					clone.AssemblyLinearVelocity = (moveDir * velo) + Vector3.new(0, mass, 0)
+
+					local check1 = (not workspace:Raycast(clone.Position, Vector3.new(0, -1000, 0), rayCheck) and workspace:Raycast(oldroot.Position + (oldroot.CFrame.LookVector * 1.3), Vector3.new(0, -1000, 0), rayCheck))
+					local check2 = (workspace:Raycast(clone.Position, Vector3.new(0, -1000, 0), rayCheck) and workspace:Raycast(oldroot.Position, Vector3.new(0, -1000, 0), rayCheck))
+
+					oldroot.CFrame = (check1 and not check2) and oldroot.CFrame or CFrame.lookAlong(Vector3.new(clone.Position.X, oldroot.Position.Y, clone.Position.Z), clone.CFrame.LookVector)
+					if (airtime > 1.2 or workspace:Raycast(clone.Position, Vector3.new(0, -1000, 0), rayCheck)) and not check1 then
+						local ray = workspace:Raycast(clone.Position, Vector3.new(0, -1000, 0), rayCheck)
+						if ray then
+							oldroot.CFrame = CFrame.lookAlong(Vector3.new(oldroot.Position.X, ray.Position.Y + entitylib.character.HipHeight, oldroot.Position.Z), clone.CFrame.LookVector)
+							oldroot.Velocity = Vector3.zero
+						else
+							reduceAirTime = true
+						end
+					elseif airtime < 0.7 and oldroot.CFrame.Y < (currenty - 100) then
+						oldroot.CFrame += Vector3.new(0, currenty + 250, 0)
+						reduceAirTime = false
+					end
+				end))
+			else
+				notif('InfiniteFly', 'Waiting 1.1s to land', 1.1, 'alert')
+				up = 0
+				down = 0
+				FlyLandTick = tick() + 1.1
+				repeat 
+					if not entitylib.isAlive or not isnetworkowner(oldroot) then 
+						break 
+					end
+					local ray = workspace:Raycast(oldroot.Position, Vector3.new(0, -1000, 0), rayCheck) 
+					if ray then
+						oldroot.Velocity = Vector3.zero
+						oldroot.CFrame = CFrame.lookAlong(Vector3.new(oldroot.Position.X, ray.Position.Y + entitylib.character.HipHeight, oldroot.Position.Z), oldroot.CFrame.LookVector)
+					end
+					task.wait() 
+				until tick() > FlyLandTick
+				destroyClone()
+				notif('InfiniteFly', 'Landed', 8, 'alert')
+			end
+		end
+	})
+	FlySpeed = InfiniteFly:CreateSlider({
+		Name = 'Speed',
+		Min = 1,
+		Max = 23,
+		Default = 23
+	})
+	VerticalSpeed = InfiniteFly:CreateSlider({
+		Name = 'Vertical Speed',
+		Min = 1,
+		Max = 150,
+		Default = 70
+	})
+end)
+
+run(function()
+  local texturepack = {Enabled = false}
+  local packDropdown = {Value = "OG Pack"}
+
+  local ogpackloader = game:GetObjects("rbxassetid://14027120450")
+  local ogtxtpack = ogpackloader[1]
+  ogtxtpack.Name = "OG Pack"
+  ogtxtpack.Parent = replicatedStorage
+  task.wait()
+  local melopackloader = game:GetObjects("rbxassetid://14774202839")
+  local melotxtpack = melopackloader[1]
+  melotxtpack.Name = "Melo's Pack"
+  melotxtpack.Parent = replicatedStorage
+  task.wait()
+  local azzapackloader = game:GetObjects("rbxassetid://14803122185")
+  local azzatxtpack = azzapackloader[1]
+  azzatxtpack.Name = "4zze's Pack"
+  azzatxtpack.Parent = replicatedStorage
+  local viewmodelCon
+  local textures = {
+    ["OG Pack"] = ogtxtpack,
+    ["Melo's Pack"] = melotxtpack,
+    ["4zze's Pack"] = azzatxtpack
+  }
+
+  local function refreshViewmodel(child)
+    if not entitylib.character then return end
+    for _,v1 in textures[packDropdown.Value]:GetChildren() do
+      if not (string.lower(v1.Name) == child.Name and child.Parent.Name ~= child.Name) then continue end
+      -- first person viewmodel check
+      for _,v2 in child:GetDescendants() do
+        if v2:IsA("Part") or v2:IsA("MeshPart") then
+          v2.Transparency = 1
+        end
+      end
+      -- third person viewmodel check
+      for _,v2 in lplr.Character:GetChildren() do
+        if v2.Name == string.lower(v1.Name) then
+          for _,v3 in v2:GetDescendants() do
+            if v3.Name ~= child.Name then
+              if v3:IsA("Part") or v3:IsA("MeshPart") then
+                v3.Transparency = 1
+                v3:GetPropertyChangedSignal("Transparency"):Connect(function() v3.Transparency = 1 end)
+              end
+            end
+          end
+        end
+      end
+      -- first person txtpack renderer
+      local vmmodel = v1:Clone()
+      vmmodel.CFrame = child.Handle.CFrame 
+      vmmodel.CFrame = vmmodel.CFrame * (packDropdown.Value == "OG Pack" and CFrame.new(0, -0.2, 0) or packDropdown.Value == "Melo's Pack" and CFrame.new(0.2, -0.2, 0) or packDropdown.Value == "4zze's Pack" and CFrame.new(0.8,0.1,0.7)) * CFrame.Angles(math.rad(90),math.rad(-130),math.rad(0))
+      if string.lower(child.Name) == "rageblade" then vmmodel.CFrame = vmmodel.CFrame * CFrame.Angles(math.rad(-180),math.rad(100),math.rad(0)) end
+      if string.lower(child.Name):find("pickaxe") then vmmodel.CFrame = vmmodel.CFrame * CFrame.Angles(math.rad(-55),math.rad(-30),math.rad(50)) end
+      if string.lower(child.Name):find("scythe") then vmmodel.CFrame = vmmodel.CFrame * CFrame.Angles(math.rad(-65),math.rad(-80),math.rad(100)) * CFrame.new(-2.8,0.4,-0.8) end
+      if (string.lower(child.Name):find("axe")) and not (string.lower(child.Name):find("pickaxe")) then vmmodel.CFrame = vmmodel.CFrame * CFrame.Angles(math.rad(-55),math.rad(-30),math.rad(50)) * (packDropdown.Value == "Melo's Pack" and CFrame.new(-0.2,0,0.2) or packDropdown.Value == "4zze's Pack" and CFrame.new(-1.5,0,-0.8)) end
+      vmmodel.Parent = child
+      local vmmodelweld = Instance.new("WeldConstraint",vmmodel)
+      vmmodelweld.Part0 = vmmodelweld.Parent
+      vmmodelweld.Part1 = child.Handle
+      -- third person txtpack renderer
+      local charmodel = v1:Clone()
+      charmodel.CFrame = playersService.LocalPlayer.Character[child.Name]:FindFirstChild("Handle").CFrame
+      charmodel.CFrame = charmodel.CFrame * (packDropdown.Value == "OG Pack" and CFrame.new(0, -0.5, 0) or packDropdown.Value == "Melo's Pack" and CFrame.new(0.2, -0.9, 0) or packDropdown.Value == "4zze's Pack" and CFrame.new(0.1,-1.2,0)) * CFrame.Angles(math.rad(90),math.rad(-130),math.rad(0))
+      if string.lower(child.Name) == "rageblade" then charmodel.CFrame = charmodel.CFrame * CFrame.Angles(math.rad(-180),math.rad(100),math.rad(0)) * CFrame.new(0.8,0,-1.1) end
+      if string.lower(child.Name):find("pickaxe") then charmodel.CFrame = charmodel.CFrame * CFrame.Angles(math.rad(-55),math.rad(-30),math.rad(50)) * CFrame.new(-0.8,-0.2,1.1) end
+      if string.lower(child.Name):find("scythe") then charmodel.CFrame = charmodel.CFrame * CFrame.Angles(math.rad(-65),math.rad(-80),math.rad(100)) * CFrame.new(-1.8,-0.5,0) end
+      if (string.lower(child.Name):find("axe")) and not (string.lower(child.Name):find("pickaxe")) then charmodel.CFrame = charmodel.CFrame * CFrame.Angles(math.rad(-55),math.rad(-30),math.rad(50)) * CFrame.new(-1.4,-0.2,0.6) end
+      charmodel.Anchored = false
+      charmodel.CanCollide = false
+      charmodel.Parent = playersService.LocalPlayer.Character[child.Name]
+      local charmodelweld = Instance.new("WeldConstraint",charmodel)
+      charmodelweld.Part0 = charmodelweld.Parent
+      charmodelweld.Part1 = playersService.LocalPlayer.Character[child.Name].Handle
+    end
+  end
+
+  texturepack = vape.Categories['Utility']:CreateModule({
+    Name = "TexturePack",
+    HoverText = "Modifies your renderer",
+    Function = function(callback)
+      if callback then
+        if gameCamera.Viewmodel:FindFirstChildWhichIsA("Accessory") then refreshViewmodel(gameCamera.Viewmodel:FindFirstChildWhichIsA("Accessory")) end
+        viewmodelCon = gameCamera.Viewmodel.ChildAdded:Connect(refreshViewmodel)
+      else
+        if viewmodelCon then pcall(function() viewmodelCon:Disconnect() end) end
+      end
+    end,
+    ExtraText = function() return packDropdown.Value end
+    })
+  packDropdown = texturepack:CreateDropdown({
+    Name = "Texture",
+    List = {"OG Pack","Melo's Pack","4zze's Pack"},
+    Function = function() end
+  })
+end)
+
+												
